@@ -1,18 +1,52 @@
-rules_version='2'
+rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      // This rule allows anyone with your database reference to view, edit,
-      // and delete all data in your database. It is useful for getting
-      // started, but it is configured to expire after 30 days because it
-      // leaves your app open to attackers. At that time, all client
-      // requests to your database will be denied.
-      //
-      // Make sure to write security rules for your app before that time, or
-      // else all client requests to your database will be denied until you
-      // update your rules.
-      allow read, write: if request.time < timestamp.date(2025, 12, 26);
+    
+    // ==================== USERS (Teachers) ====================
+    // Teachers can create their own profile (registration)
+    // Teachers can read and update their own profile
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Teachers can CRUD their own exams
+    // Students (anyone) can read exams to take them
+    match /exams/{examId} {
+      // Anyone can read (students need to access for taking exam)
+      allow read: if true;
+      
+      // Only authenticated teachers can create/update/delete their own exams
+      allow create: if request.auth != null 
+                    && request.resource.data.teacherId == request.auth.uid;
+      allow update, delete: if request.auth != null 
+                            && resource.data.teacherId == request.auth.uid;
+    }
+    
+    // ==================== STUDENTS (Soft Auth) ====================
+    // Students collection is for metadata-based soft login
+    // Anyone can read (to check existing student) and create (new student)
+    // No update/delete to prevent tampering
+    match /students/{studentId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if false;
+    }
+    
+    // ==================== SUBMISSIONS ====================
+    // Students can create submissions (no auth required for soft login)
+    // Teachers can read submissions for their exams
+    match /submissions/{submissionId} {
+      // Anyone can create (student soft login doesn't have auth)
+      allow create: if true;
+      
+      // Only authenticated teachers can read
+      allow read: if request.auth != null;
+      
+      // No updates or deletes
+      allow update, delete: if false;
     }
   }
 }

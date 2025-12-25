@@ -2,24 +2,35 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/AuthContext";
+import { useStudent } from "@/contexts/StudentContext";
 import { db, storage } from "@/lib/firebase";
 import { doc, getDoc, addDoc, collection } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Exam, Question, Answer, Submission } from "@/types/exam";
-import { Loader2, Clock, Upload, Mic, Image as ImageIcon, FileText, CheckCircle } from "lucide-react";
+import { Loader2, Clock, Upload, Mic, Image as ImageIcon, FileText, CheckCircle, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
 
 export default function ExamPage() {
     const params = useParams();
     const router = useRouter();
-    const { user, userData } = useAuth();
+    const { student, loading: studentLoading } = useStudent();
     const [exam, setExam] = useState<Exam | null>(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [answers, setAnswers] = useState<Record<string, Answer>>({});
     const [timeLeft, setTimeLeft] = useState<number | null>(null);
     const [startedAt] = useState(Date.now());
+    const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+
+    // Check if student is logged in
+    useEffect(() => {
+        if (!studentLoading && !student) {
+            setShowLoginPrompt(true);
+        } else {
+            setShowLoginPrompt(false);
+        }
+    }, [student, studentLoading]);
 
     // Fetch Exam
     useEffect(() => {
@@ -36,7 +47,7 @@ export default function ExamPage() {
                     }
                 } else {
                     alert("Sınav bulunamadı.");
-                    router.push("/student");
+                    router.push("/login");
                 }
             } catch (error) {
                 console.error("Error fetching exam:", error);
@@ -49,7 +60,7 @@ export default function ExamPage() {
 
     // Timer
     useEffect(() => {
-        if (timeLeft === null || timeLeft <= 0) return;
+        if (timeLeft === null || timeLeft <= 0 || showLoginPrompt) return;
         const timer = setInterval(() => {
             setTimeLeft((prev) => {
                 if (prev === null || prev <= 0) {
@@ -60,14 +71,14 @@ export default function ExamPage() {
             });
         }, 1000);
         return () => clearInterval(timer);
-    }, [timeLeft]);
+    }, [timeLeft, showLoginPrompt]);
 
     // Auto-submit on timeout
     useEffect(() => {
-        if (timeLeft === 0) {
+        if (timeLeft === 0 && student) {
             handleSubmit();
         }
-    }, [timeLeft]);
+    }, [timeLeft, student]);
 
     const handleAnswerChange = (questionId: string, content: string, type: "text" | "handwriting" | "audio" = "text") => {
         setAnswers((prev) => ({
@@ -81,12 +92,12 @@ export default function ExamPage() {
     };
 
     const handleFileUpload = async (questionId: string, file: File) => {
-        if (!user) return;
+        if (!student) return;
         try {
-            const storageRef = ref(storage, `submissions/${params.examId}/${user.uid}/${questionId}/${file.name}`);
+            const storageRef = ref(storage, `submissions/${params.examId}/${student.id}/${questionId}/${file.name}`);
             await uploadBytes(storageRef, file);
             const url = await getDownloadURL(storageRef);
-            handleAnswerChange(questionId, url, "handwriting"); // Assuming file upload is mostly for handwriting/image
+            handleAnswerChange(questionId, url, "handwriting");
         } catch (error) {
             console.error("Upload failed", error);
             alert("Dosya yüklenemedi.");
@@ -94,13 +105,13 @@ export default function ExamPage() {
     };
 
     const handleSubmit = async () => {
-        if (!user || !exam || submitting) return;
+        if (!student || !exam || submitting) return;
 
         setSubmitting(true);
         try {
             const submissionData: Omit<Submission, "id"> = {
                 examId: exam.id,
-                studentId: user.uid,
+                studentId: student.id, // Using StudentContext ID
                 answers: Object.values(answers),
                 startedAt,
                 submittedAt: Date.now(),
@@ -121,10 +132,33 @@ export default function ExamPage() {
         return `${mins}:${secs.toString().padStart(2, "0")}`;
     };
 
-    if (loading) {
+    if (loading || studentLoading) {
         return (
             <div className="flex min-h-screen items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+            </div>
+        );
+    }
+
+    // Login prompt for students without session
+    if (showLoginPrompt && exam) {
+        return (
+            <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-4">
+                <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl text-center">
+                    <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-yellow-100">
+                        <AlertCircle className="h-8 w-8 text-yellow-600" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-gray-900 mb-2">Giriş Yapmanız Gerekiyor</h2>
+                    <p className="text-gray-600 mb-6">
+                        <strong>"{exam.title}"</strong> sınavına katılmak için önce giriş yapmalısınız.
+                    </p>
+                    <Link
+                        href={`/login?redirect=/exam/${params.examId}`}
+                        className="inline-flex w-full items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-md hover:from-blue-700 hover:to-indigo-700 transition-all"
+                    >
+                        Giriş Yap
+                    </Link>
+                </div>
             </div>
         );
     }
@@ -138,7 +172,9 @@ export default function ExamPage() {
                 <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4">
                     <div>
                         <h1 className="text-lg font-bold text-gray-900">{exam.title}</h1>
-                        <p className="text-sm text-gray-500">{userData?.displayName}</p>
+                        <p className="text-sm text-gray-500">
+                            {student?.firstName} {student?.lastName}
+                        </p>
                     </div>
                     {timeLeft !== null && (
                         <div className={cn(
