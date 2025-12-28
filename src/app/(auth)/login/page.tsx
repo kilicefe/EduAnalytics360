@@ -317,6 +317,7 @@ export default function LoginPage() {
                                             onChange={(e) => setEmail(e.target.value)}
                                             className="block w-full rounded-lg border border-gray-300 pl-10 py-2.5 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                                             placeholder="ogretmen@okul.com"
+                                            autoComplete="email"
                                         />
                                     </div>
                                 </div>
@@ -335,6 +336,7 @@ export default function LoginPage() {
                                             onChange={(e) => setPassword(e.target.value)}
                                             className="block w-full rounded-lg border border-gray-300 pl-10 py-2.5 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                                             placeholder="En az 6 karakter"
+                                            autoComplete="current-password"
                                         />
                                     </div>
                                 </div>
