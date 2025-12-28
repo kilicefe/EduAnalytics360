@@ -2,9 +2,9 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { User, onAuthStateChanged, signOut as firebaseSignOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { UserData, UserRole } from "@/types/user";
+import { UserData, FREE_PLAN_LIMITS } from "@/types/user";
 import { useRouter } from "next/navigation";
 
 interface AuthContextType {
@@ -33,16 +33,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             if (firebaseUser) {
                 try {
-                    const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+                    const userRef = doc(db, "users", firebaseUser.uid);
+                    const userDoc = await getDoc(userRef);
+
                     if (userDoc.exists()) {
                         setUserData(userDoc.data() as UserData);
                     } else {
-                        // Handle case where user exists in Auth but not in Firestore (shouldn't happen ideally)
-                        console.error("User document not found in Firestore");
-                        setUserData(null);
+                        // Self-healing: Auto-create missing user profile
+                        console.log("[AuthProvider] User document not found, creating default profile...");
+                        const newProfile: UserData = {
+                            uid: firebaseUser.uid,
+                            email: firebaseUser.email || "",
+                            displayName: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "Öğretmen",
+                            role: "teacher",
+                            plan: "free",
+                            quota: {
+                                maxExams: FREE_PLAN_LIMITS.maxExams,
+                                maxStudents: FREE_PLAN_LIMITS.maxStudents,
+                            },
+                            usage: {
+                                examCount: 0,
+                                studentCount: 0,
+                            },
+                            createdAt: Date.now(),
+                        };
+                        await setDoc(userRef, newProfile);
+                        setUserData(newProfile);
+                        console.log("[AuthProvider] Default user profile created successfully");
                     }
                 } catch (error) {
-                    console.error("Error fetching user data:", error);
+                    console.error("[AuthProvider] Error fetching/creating user data:", error);
                     setUserData(null);
                 }
             } else {
