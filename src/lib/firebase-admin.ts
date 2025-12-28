@@ -9,21 +9,21 @@ if (!admin.apps.length) {
     const projectId = process.env.GOOGLE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
     const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
 
-    // Handle private key - try multiple methods
-    let privateKey = process.env.GOOGLE_PRIVATE_KEY;
+    // Get private key - prefer Base64 encoded version for reliability
+    let privateKey: string | undefined;
 
-    if (privateKey) {
-        // Method 1: Replace escaped newlines with actual newlines
-        privateKey = privateKey.replace(/\\n/g, '\n');
-
-        // Method 2: If it's base64 encoded, decode it
-        if (!privateKey.includes("-----BEGIN")) {
-            try {
-                privateKey = Buffer.from(privateKey, 'base64').toString('utf8');
-            } catch (e) {
-                // Not base64, continue with original
-            }
+    if (process.env.GOOGLE_PRIVATE_KEY_BASE64) {
+        // Decode Base64 encoded private key (most reliable method)
+        try {
+            privateKey = Buffer.from(process.env.GOOGLE_PRIVATE_KEY_BASE64, 'base64').toString('utf8');
+            console.log("[Firebase Admin] Private key decoded from Base64 successfully");
+        } catch (e) {
+            console.error("[Firebase Admin] Failed to decode Base64 private key:", e);
         }
+    } else if (process.env.GOOGLE_PRIVATE_KEY) {
+        // Fallback: try to use direct private key with newline fix
+        privateKey = process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n');
+        console.log("[Firebase Admin] Using direct private key with newline replacement");
     }
 
     console.log("[Firebase Admin] === Initialization Debug ===");
@@ -31,10 +31,10 @@ if (!admin.apps.length) {
     console.log("[Firebase Admin] Client Email:", clientEmail || "NOT SET");
     console.log("[Firebase Admin] Private Key Present:", !!privateKey);
     console.log("[Firebase Admin] Private Key Length:", privateKey?.length || 0);
-    console.log("[Firebase Admin] Private Key Starts With:", privateKey?.substring(0, 30) || "N/A");
+    console.log("[Firebase Admin] Private Key Valid:", privateKey?.includes("-----BEGIN PRIVATE KEY-----") && privateKey?.includes("-----END PRIVATE KEY-----"));
     console.log("[Firebase Admin] ================================");
 
-    if (projectId && clientEmail && privateKey && privateKey.includes("-----BEGIN")) {
+    if (projectId && clientEmail && privateKey && privateKey.includes("-----BEGIN PRIVATE KEY-----")) {
         try {
             admin.initializeApp({
                 credential: admin.credential.cert({
@@ -54,11 +54,9 @@ if (!admin.apps.length) {
         // Fallback for environments without full credentials
         admin.initializeApp({ projectId });
         console.log("[Firebase Admin] ⚠️ Initialized with project ID only (limited access)");
-        console.log("[Firebase Admin] Missing: clientEmail=", !clientEmail, "privateKey valid=", privateKey?.includes("-----BEGIN"));
+        console.log("[Firebase Admin] Missing credentials - clientEmail:", !clientEmail, "privateKey valid:", privateKey?.includes("-----BEGIN"));
     } else {
         console.error("[Firebase Admin] ❌ No credentials available!");
-        console.error("[Firebase Admin] GOOGLE_PROJECT_ID:", process.env.GOOGLE_PROJECT_ID);
-        console.error("[Firebase Admin] NEXT_PUBLIC_FIREBASE_PROJECT_ID:", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
         throw new Error("Firebase Admin credentials not configured");
     }
 }
